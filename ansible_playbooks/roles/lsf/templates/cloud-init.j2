@@ -1,0 +1,26 @@
+#!/bin/bash
+
+### Send stdout and stderr to /var/log/cloud-init2.log
+exec 1> /var/log/cloud-init2.log 2>&1
+
+echo "Firewall setup started"
+systemctl disable firewalld
+systemctl stop firewalld
+echo "Firewall setup done"
+
+echo "Mounting LSF shared_drive started"
+echo "{{ ansible_host }} {{ inventory_hostname }}" >> /etc/hosts
+echo "{{ ansible_host }}:{{ shared_drive }} {{ shared_drive }} nfs defaults,noatime,bg,timeo=100,ac,actimeo=120,nocto,rsize=1048576,wsize=1048576,nolock,local_lock=all,mountproto=tcp,sec=sys,_netdev 0 0" >> /etc/fstab
+mkdir -p -m 755 {{ shared_drive }}
+chown -R {{ lsf_owner }}:{{ lsf_group }} /nfs/
+mount {{ shared_drive }}
+echo "Mounting LSF shared_drive done"
+
+echo "Starting LSF"
+echo 'LSF_STARTUP_USERS="{{ lsf_owner }}"' >> /etc/lsf.sudoers
+echo 'LSF_STARTUP_PATH={{ lsf_etcdir }}' >> /etc/lsf.sudoers
+chmod 600 /etc/lsf.sudoers
+
+yum install -y libnsl
+cd {{ shared_drive }}/lsf10.1_lsfinstall;./hostsetup --top="{{lsf_top}}" --start="y" --dynamic 
+echo "Starting LSF done"

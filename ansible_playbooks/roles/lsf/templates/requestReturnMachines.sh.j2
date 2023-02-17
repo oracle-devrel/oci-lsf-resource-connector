@@ -1,0 +1,41 @@
+#!/bin/bash
+
+#export LC_ALL=C.UTF-8
+#export LANG=C.UTF-8
+
+export LSF_install={{ lsf_top }}
+export clustername={{ cluster_name }}
+export OCI_CLI_AUTH=instance_principal
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+INPUT=$2
+TIME=`date +%Y%m%d%H%M%S`
+cp $2 /tmp/rrm_$TIME.json
+
+for INSTANCE in `jq ".machines[].name" $INPUT`;
+do
+    INSTANCE_NAME=${INSTANCE:1:-1}
+    INSTANCE_ID=`jq ".machines[] | select(.name==\"${INSTANCE_NAME}\") | .machineId" $INPUT`
+    echo $INSTANCE_NAME INSTANCE_NAME >> /tmp/rrm_$TIME.log
+    echo ${INSTANCE_ID:1:-1} INSTANCE_ID >> /tmp/rrm_$TIME.log
+
+    INSTANCE_DETAILS=`oci compute instance get --instance-id ${INSTANCE_ID:1:-1}`
+    echo $INSTANCE_DETAILS >> /tmp/rrm_$TIME.log
+
+    INSTANCE_STATUS=`echo $INSTANCE_DETAILS | jq '.data."lifecycle-state"'`
+    echo $INSTANCE_STATUS INSTANCE_STATUS>> /tmp/rrm_$TIME.log
+    
+    if [ $INSTANCE_STATUS == \"RUNNING\" ]
+    then
+        terminate_node=`oci compute instance terminate --instance-id ${INSTANCE_ID:1:-1} --force`
+        cat <<EOF2
+{"message":"Delete instances success.","requestId":${INSTANCE}}
+EOF2
+
+    else
+        cat <<EOF2
+{"message":"Instance was already deleted.","requestId":${INSTANCE}}
+EOF2
+    fi
+done

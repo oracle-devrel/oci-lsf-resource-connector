@@ -1,0 +1,135 @@
+#!/bin/bash
+
+#export LC_ALL=C.UTF-8
+#export LANG=C.UTF-8
+
+export OCI_CLI_AUTH=instance_principal
+
+export LSF_install={{ lsf_top }}
+while getopts f: flag
+do
+    case "${flag}" in
+        f) INPUT_FILE=${OPTARG};;
+    esac
+done
+
+REQUEST=$(jq -r '.requests[].requestId' $INPUT_FILE)
+TEMPLATE_ID=${REQUEST:{{ lsf_rc_host_prefix|length + 1}}:-9}
+
+TIME=`date +%Y%m%d%H%M%S`
+cp $INPUT_FILE /tmp/gRS_$REQUEST_$TIME.inp
+
+config=`cat $LSF_install/conf/resource_connector/oci/conf/oci_config.json | jq  .data[] | jq "with_entries(select(.key == \"$TEMPLATE_ID\"))"`
+compartmentid=`echo $config | jq .[].compartmentid`
+if [ "$compartmentid" == "" ]
+then
+cat <<EOF
+{
+  "requests":[
+    {
+      "requestId":"${REQUEST}",
+      "status":"complete",
+    }
+  ]
+}
+EOF
+exit
+fi
+
+
+arrJo=()
+all_instances_running=true
+INSTANCE_ID=None
+
+INSTANCE_LIST_DETAILS=`oci compute instance list --all --compartment-id ${compartmentid:1:-1} | jq ".data[] | select( .\"lifecycle-state\" != \"TERMINATED\" or  .\"lifecycle-state\" != \"TERMINATING\") | select(.\"freeform-tags\".\"lsf:request\" == \"$REQUEST\")"`
+
+if [ `echo $INSTANCE_LIST_DETAILS | jq "length" | wc -l` == "0" ]
+then
+  LSF_REQUEST_STATUS="complete_with_error"
+cat >output_$REQUEST_$TIME.json  <<EOF1
+{
+  "requests":[
+    {
+      "requestId":"${REQUEST}",
+      "status":"$LSF_REQUEST_STATUS",
+      "message":"No nodes were found for that request"
+    }
+  ]
+}
+EOF1
+
+else
+
+  for INSTANCE_ID in ` echo $INSTANCE_LIST_DETAILS | jq ".id"`
+  do
+    data=`oci compute instance get --instance-id ${INSTANCE_ID:1:-1} `
+    INSTANCE_NAME=`echo $data | jq ".data | .\"display-name\""`
+    echo $data | jq ".data | .\"lifecycle-state\"" >> /tmp/gRS_$REQUEST_$TIME.log
+    if [ `echo $data | jq ".data | .\"lifecycle-state\""` == "PROVISIONNING" ]
+    then
+        all_instances_running=False
+        LSF_INSTANCE_RESULT='executing'
+        LSF_REQUEST_STATUS='running'
+        cat >output_$REQUEST_$TIME.json  <<EOF2
+{
+  "requests":[
+    {
+      "requestId":"${REQUEST}",
+      "status":"$LSF_REQUEST_STATUS",
+    }
+  ]
+}
+EOF2
+cat output_$REQUEST_$TIME.json
+exit
+    else
+        VNIC_DETAILS=`oci compute instance list-vnics --instance-id ${INSTANCE_ID:1:-1} 2> /dev/null`
+        if [ "$?" != "0" ]
+        then
+          all_instances_running=False
+          LSF_INSTANCE_RESULT='executing'
+          LSF_REQUEST_STATUS='running'
+          cat >output_$REQUEST_$TIME.json  <<EOF3
+{
+  "requests":[
+    {
+      "requestId":"${REQUEST}",
+      "status":"$LSF_REQUEST_STATUS",
+    }
+  ]
+}
+EOF3
+          cat output_$REQUEST_$TIME.json
+          exit
+        fi
+        INSTANCE_PRIVATE_IP=`echo $VNIC_DETAILS | jq ".data[0].\"private-ip\""`
+        INSTANCE_LAUNCHTIME=`echo $data | jq ".data | .\"time-created\""`
+        INSTANCE_LAUNCHTIME_IN_UTC_SECONDS=$(date -d"${INSTANCE_LAUNCHTIME:1:-1}" +%s)
+        SUBNET_ID=`echo $VNIC_DETAILS | jq ".data[0].\"subnet-id\""`
+        DOMAIN_NAME=`oci network subnet get --subnet-id ${SUBNET_ID:1:-1}  | jq ".data.\"subnet-domain-name\""`
+        FULL_NAME=${INSTANCE_NAME:1:-1}.${DOMAIN_NAME:1:-1}
+        if [ ` ssh -i {{ shared_drive }}/misc/lsf_id_rsa -oConnectTimeout=5 -oStrictHostKeyChecking=no -oBatchMode=yes opc@${INSTANCE_PRIVATE_IP:1:-1} uptime | grep up | wc -l ` == 0 ]
+        then
+          all_instances_running=False
+          LSF_INSTANCE_RESULT='executing'
+        else
+          LSF_INSTANCE_RESULT='succeed'
+        fi
+        arrJo+=("machineId=${INSTANCE_ID:1:-1} name=${FULL_NAME} result=$LSF_INSTANCE_RESULT privateIpAddress=${INSTANCE_PRIVATE_IP:1:-1} launchtime=$INSTANCE_LAUNCHTIME_IN_UTC_SECONDS")
+  fi
+  done
+
+  if [ $all_instances_running == "False" ]
+  then
+    LSF_REQUEST_STATUS='running'
+  else
+    LSF_REQUEST_STATUS="complete"
+  fi
+
+  JO_STR1='jo -p requests=$(jo -a $(jo requestId="$REQUEST" status=$LSF_REQUEST_STATUS machines=$(jo -a'
+  JO_STR2=$(printf -- ' $(jo '%s')' "${arrJo[@]}")
+  JO_STR3=")))"
+  source <(echo "$JO_STR1$JO_STR2$JO_STR3") > /tmp/output_$REQUEST_$TIME.json
+fi
+
+cat /tmp/output_$REQUEST_$TIME.json

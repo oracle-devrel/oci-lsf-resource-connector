@@ -1,0 +1,70 @@
+#!/bin/bash
+
+#export LC_ALL=C.UTF-8
+#export LANG=C.UTF-8
+
+export OCI_CLI_AUTH=instance_principal
+
+INPUT=$2
+export LSF_install={{ lsf_top }}
+RANDOMCHARS=`dd if=/dev/urandom bs=1k count=1 2> /dev/null|sha256sum|cut -c1-8`
+
+NEW_POOL_SIZE=`jq .template.machineCount $INPUT`
+temp_TEMPLATE_ID=`jq .template.templateId $INPUT`
+TEMPLATE_ID=${temp_TEMPLATE_ID:1:-1}
+
+REQUESTID={{ lsf_rc_host_prefix }}-$TEMPLATE_ID-$RANDOMCHARS
+cp $2 /tmp/rm_$REQUESTID.inp
+
+config=`cat $LSF_install/conf/resource_connector/oci/conf/oci_config.json | jq  .data[] | jq "with_entries(select(.key == \"$TEMPLATE_ID\"))"`
+
+shape=`echo $config | jq .[].shape`
+availabilitydomain=`echo $config | jq .[].availabilitydomain`
+compartmentid=`echo $config | jq .[].compartmentid`
+cn=`echo $config | jq .[].cn`
+subnet=`echo $config | jq .[].subnet`
+image=`echo $config | jq .[].image`
+cloudinit=`echo $config | jq .[].cloudinit`
+sshkeyfile=`echo $config | jq .[].sshkeyfile`
+cores=`echo $config | jq .[].cores`
+memory=`echo $config | jq .[].memory`
+cpu_man=`echo $config | jq .[].cpu_man`
+
+
+nodes_provisioning=`oci compute instance list --all --compartment-id ${compartmentid:1:-1} | jq ".data[] | select( .\"lifecycle-state\" == \"PROVISIONING\") | select(.\"freeform-tags\".\"lsf:type\" == \"$TEMPLATE_ID\") | .\"display-name\" "`
+echo "Nodes Provisioning: $nodes_provisioning" >> /tmp/rm_${REQUESTID}.log
+POOL_NODE_COUNT=`echo $nodes_provisioning | wc -w`
+NEW_INSTANCE_COUNT=$(( $NEW_POOL_SIZE - $POOL_NODE_COUNT ))
+
+ADs=`oci iam availability-domain list --compartment-id ${compartmentid:1:-1}`
+if [ $NEW_INSTANCE_COUNT -gt 0 ]
+then
+  if [ "${availabilitydomain:1:-1}" == "*" ] ; then
+    totalADs=`echo $ADs | jq ".data | length"`
+    ADNumber=$(( ( RANDOM % totalADs ) ))
+  else
+    totalADs=1
+  fi
+  for (( i=1; i<=$NEW_INSTANCE_COUNT; i++ ))
+  do
+    if [ "${availabilitydomain:1:-1}" == "*" ] ; then
+      ADNAME=`echo $ADs | jq ".data[$ADNumber].name"`
+    else
+      ADNAME=${availabilitydomain}
+    fi
+    for (( j=1; j<=$totalADs; j++ ))
+    do
+        new_nodes=`oci compute instance launch --display-name $REQUESTID-$i --availability-domain ${ADNAME:1:-1} --compartment-id ${compartmentid:1:-1} --shape ${shape:1:-1} --subnet-id ${subnet:1:-1} --image-id ${image:1:-1} --shape-config "{\"memoryInGBs\":$memory,\"ocpus\":$cores}" --user-data-file ${cloudinit:1:-1} --ssh-authorized-keys-file ${sshkeyfile:1:-1} --freeform-tags "{\"lsf:request\":\"${REQUESTID}\",\"lsf:type\":\"$TEMPLATE_ID\"}" 2>/tmp/rm_${REQUESTID}.log`
+        if [ "$?" == "0" ] ; then
+          break
+        fi
+    done
+  ADNumber=$(((ADNumber +1 )%4))
+  done
+fi
+cat <<EOF
+{
+    "message":"Request instances success from oci.",
+    "requestId":"${REQUESTID}"
+}
+EOF
