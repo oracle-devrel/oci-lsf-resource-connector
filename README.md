@@ -1,6 +1,6 @@
 # oci-lsf-resource-connector
 
-[![License: UPL](https://img.shields.io/badge/license-UPL-green)](https://img.shields.io/badge/license-UPL-green) [![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=robo-cap_oci-lsf-resource-connector)](https://sonarcloud.io/dashboard?id=robo-cap_oci-lsf-resource-connector)
+[![License: UPL](https://img.shields.io/badge/license-UPL-green)](https://img.shields.io/badge/license-UPL-green) /*[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=robo-cap_oci-lsf-resource-connector)](https://sonarcloud.io/dashboard?id=robo-cap_oci-lsf-resource-connector)*/
 
 ## Introduction
 
