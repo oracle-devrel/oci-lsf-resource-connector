@@ -1,0 +1,119 @@
+---
+- name: Add repository
+  become: true
+  yum_repository:
+    name: epel
+    description: EPEL YUM repo
+    metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-8&arch=x86_64&infra=$infra&content=$contentdir
+
+- name: Install needed libraries
+  become: true
+  yum:
+    name:
+      - ed
+      - jre
+      - jo
+      - libnsl      
+    state: latest
+    disable_gpg_check: true
+
+- name: Download LSF Packages
+  become: true
+  block:
+    - name: Create LSF directory
+      file:
+        path: "{{ shared_drive }}"
+        state: directory
+        owner: "{{ lsf_owner }}"
+        group: "{{ lsf_group }}"
+        mode: '0755'
+    
+    - name: Download lsfinstall
+      unarchive:
+        src: "{{ lsfinstaller }}"
+        remote_src: true
+        dest: "{{ shared_drive }}"
+        owner: "{{ lsf_owner }}"
+        group: "{{ lsf_group }}"
+        creates: "{{ shared_drive }}/lsf10.1_lsfinstall/install.config"
+
+    - name: Download lsfbin
+      get_url:
+        url: "{{lsfbin}}"
+        dest: "{{ shared_drive }}/lsf10.1_lsfinstall/lsf10.1_lnx310-lib217-x86_64.tar.Z"
+        force: false
+        owner: "{{ lsf_owner }}"
+        group: "{{ lsf_group }}"
+
+    - name: Download lsfpatch
+      get_url:
+        url: "{{lsfpatch}}"
+        dest: "{{ shared_drive }}/lsf10.1_lsfinstall/lsf10.1_lnx310-lib217-x86_64-601088.tar.Z"
+        force: false
+        owner: "{{ lsf_owner }}"
+        group: "{{ lsf_group }}"
+
+    - name: Create conf directory
+      file:
+        path: "{{ shared_drive }}/lsf10.1_lsfinstall/conf/"
+        state: directory
+        owner: "{{ lsf_owner }}"
+        group: "{{ lsf_group }}"
+
+    - name: Download lsf_std_entitlement
+      get_url:
+        url: "{{lsf_std_entitlement}}"
+        dest: "{{ shared_drive }}/lsf10.1_lsfinstall/conf/lsf_std_entitlement.dat"
+        force: false
+        owner: "{{ lsf_owner }}"
+        group: "{{ lsf_group }}"
+
+- name: Remove SGID in shared_drive
+  become: true
+  file:
+    path: "{{ shared_drive }}"
+    mode: g-s
+    recurse: true
+    state: directory
+
+- name: Generate install.config
+  become: true
+  template:
+    src: install.config.j2
+    dest: "{{ shared_drive }}/lsf10.1_lsfinstall/install.config"
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+
+- name: Install LSF as lsf_owner
+  become: true
+  become_user: "{{ lsf_owner }}"
+  shell: 'printf "1\n1\n2\n" | ./lsfinstall -f install.config'
+  args:
+    chdir: "{{ shared_drive }}/lsf10.1_lsfinstall"
+    creates: "{{ lsf_top }}/LSF_redist.txt"
+  register: lsf_install_output
+
+- name: Output of LSF installation
+  debug:
+    msg: "{{ lsf_install_output }}"
+
+- name: Install LSF patch as lsf_owner
+  become: true
+  become_user: "{{ lsf_owner }}"
+  shell: 'printf "y\ny\n" | ./patchinstall -f {{lsf_top}}/conf/profile.lsf "{{ shared_drive }}/lsf10.1_lsfinstall/lsf10.1_lnx310-lib217-x86_64-601088.tar.Z"'
+  args:
+    chdir: "{{ shared_drive }}/lsf10.1_lsfinstall"
+    creates: "{{ lsf_top }}/10.1/linux3.10-glibc2.17-x86_64/lsf_release"
+  register: lsf_patch_install_output
+
+- name: Output of LSF patch installation
+  debug:
+    msg: "{{ lsf_patch_install_output }}"
+
+- name: Update LSF configuration to use SSH
+  become: true
+  become_user: "{{ lsf_owner }}"  
+  lineinfile:
+    dest: "{{ lsf_top }}/conf/lsf.conf"
+    state: present
+    line: 'LSF_RSH=ssh'

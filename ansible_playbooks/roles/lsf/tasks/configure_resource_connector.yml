@@ -1,0 +1,244 @@
+---
+- name: Create directory for LSF RSA keys and cloud-init
+  become: true
+  become_user: "{{ lsf_owner }}"
+  file:
+    path: "{{ shared_drive }}/misc"
+    state: directory
+    mode: "0755"
+
+- name: Generate RSA keys for LSF resource_connector
+  become: true
+  openssh_keypair:
+    path: "{{ shared_drive }}/misc/lsf_id_rsa"
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+    mode: "0400"
+    regenerate: "full_idempotence"
+
+- name: Fix permission on private key
+  become: true
+  file:
+    path: "{{ shared_drive }}/misc/lsf_id_rsa"
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+    force: true
+    mode: "0400"
+
+- name: Create directories for LSF resource_connector OCI plugin
+  become: true
+  become_user: "{{ lsf_owner }}"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ lsf_top }}/conf/resource_connector/oci"
+    - "{{ lsf_top }}/conf/resource_connector/oci/conf"
+    - "{{ lsf_top }}/10.1/resource_connector/oci"
+    - "{{ lsf_top }}/10.1/resource_connector/oci/scripts"
+    - "{{ lsf_top }}/work/{{ cluster_name }}/resource_connector"
+
+- name: Copy required json files to resource connector workdir
+  become: true
+  copy:
+    src: "files/hosts.json"
+    dest: "{{ lsf_top }}/work/{{ cluster_name }}/resource_connector/"
+    force: true
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+  loop:
+    - "files/hosts.json"
+    - "files/requests.json"
+
+- name: Copy required script files to lsf_top/10.1/resource_connector/oci/scripts/
+  become: true
+  template:
+    src: "{{ item }}"
+    dest: "{{ lsf_top }}/10.1/resource_connector/oci/scripts/{{ item.rstrip('.j2') }}"
+    mode: "0755"
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+    force: true
+  loop:
+    - "getRequestStatus.sh.j2"
+    - "requestMachines.sh.j2"
+    - "requestReturnMachines.sh.j2"
+    - "getAvailableTemplates.sh.j2"
+
+- name: Copy required script files to lsf_top/10.1/resource_connector/oci/scripts/
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: "{{ lsf_top }}/10.1/resource_connector/oci/scripts/"
+    mode: "0755"
+    force: true
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+  loop:
+    - "files/getReturnRequests.sh"
+
+- name: Copy required files to lsf_top/conf/resource_connector
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: "{{ lsf_top }}/conf/resource_connector/"
+    mode: "0755"
+    force: true
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+  loop:
+    - "files/policy_config.json"
+    - "files/hostProviders.json"
+
+- name: Copy files to lsf_top/conf/resource_connector/oci/
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: "{{ lsf_top }}/conf/resource_connector/oci/"
+    mode: "0755"
+    force: true
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+  loop:
+    - "files/provider.json"
+
+- name: Copy files to lsf_top/conf/resource_connector/oci/conf/
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: "{{ lsf_top }}/conf/resource_connector/oci/conf/"
+    mode: "0755"
+    force: true
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+  loop:
+    - "files/ociprov_config.json"
+    - "files/ociprov_templates.json"
+
+- name: Copy oci_config.json to lsf_top/conf/resource_connector/oci/conf/
+  become: true
+  template:
+    src: "{{ item }}"
+    dest: "{{ lsf_top }}/conf/resource_connector/oci/conf/{{ item.rstrip('.j2') }}"
+    mode: "0755"
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+    force: true
+  loop:
+    - "oci_config.json.j2"
+
+- name: Check for presence of resource_connector HostGroup in lsb.hosts
+  become: true
+  become_user: "{{ lsf_owner }}"
+  lineinfile:
+    dest: "{{ lsf_top }}/conf/lsbatch/{{ cluster_name }}/configdir/lsb.hosts"
+    regex: ".*Host group for resource_connector.*"
+    state: absent
+  check_mode: yes
+  register: rchg_found
+
+- name: Setup HostGroup for resource connector hosts in lsb.hosts
+  become: true
+  become_user: "{{ lsf_owner }}"
+  blockinfile:
+    path: "{{ lsf_top }}/conf/lsbatch/{{ cluster_name }}/configdir/lsb.hosts"
+    block: |
+      GROUP_NAME    GROUP_MEMBER  
+      hg-rc      {{ lsf_rc_host_prefix }}-*
+    state: present
+    marker_begin: "# Host group for resource_connector\nBegin HostGroup"
+    marker_end: "End HostGroup\n"
+    marker: "{mark}"
+  when: rchg_found.found != 1
+
+- name: Check if rc_queue is present in lsb.queues
+  become: true
+  become_user: "{{ lsf_owner }}" 
+  lineinfile:
+    dest: "{{ lsf_top }}/conf/lsbatch/{{ cluster_name }}/configdir/lsb.queues"
+    regex: ".*ANSIBLE MANAGED BLOCK {{ rc_queue }}$"
+    state: absent
+  check_mode: yes
+  register: queue_found
+
+- name: Add Queue if not present
+  become: true
+  become_user: "{{ lsf_owner }}"
+  blockinfile:
+    path: "{{ lsf_top }}/conf/lsbatch/{{ cluster_name }}/configdir/lsb.queues"
+    block: |
+      Begin Queue
+      QUEUE_NAME   = {{ rc_queue }}
+      PRIORITY     = 10
+      NICE         = 20
+      HOSTS        = hg-rc
+      RC_HOSTS     = ocihost
+      DESCRIPTION  = Queue {{ rc_queue }} for dynamic hosts.
+      End Queue
+    marker: "# {mark} ANSIBLE MANAGED BLOCK {{ rc_queue }}"
+    marker_begin: '\n# BEGIN' 
+    marker_end: '# END'
+  when: queue_found.found != 1
+
+- name: Update default queue
+  become: true
+  become_user: "{{ lsf_owner }}"
+  lineinfile:
+    dest: "{{ lsf_top}}/conf/lsbatch/{{ cluster_name }}/configdir/lsb.params"
+    regexp: "^DEFAULT_QUEUE"
+    line: "DEFAULT_QUEUE = {{ rc_queue }} # Default job queue name"
+
+- name: Update lsf.conf with resource connector lines
+  become: true
+  become_user: "{{ lsf_owner }}"
+  lineinfile:
+    dest: "{{ lsf_top}}/conf/lsf.conf"
+    regexp: "^{{ item.property | regex_escape() }}="
+    line: "{{ item.property }}={{ item.value }}"
+  loop:
+    - { property: 'LSF_DYNAMIC_HOST_TIMEOUT', value: '10m'}
+    - { property: 'ENABLE_DYNAMIC_HOSTS', value: 'Y'}    
+    - { property: 'LSF_DYNAMIC_HOST_WAIT_TIME', value: '60'}
+    - { property: 'LSB_RC_EXTERNAL_HOST_FLAG', value: 'ocihost'}
+    - { property: 'LSB_RC_EXTERNAL_HOST_IDLE_TIME', value: '10'}
+    - { property: 'LSF_MQ_BROKER_HOSTS', value: '{{ ansible_hostname }}' }
+    - { property: 'LSB_RC_QUERY_INTERVAL', value: '30'}
+    - { property: 'LSB_RC_UPDATE_INTERVAL', value: '30'}
+    - { property: 'LSF_CALL_LIM_WITH_TCP', value: 'Y'}
+    - { property: 'LSF_ANNOUNCE_MASTER_TCP_WAITTIME', value: '10'}
+    - { property: 'LSF_LOG_MASK', value: 'LOG_DEBUG3'}
+    - { property: 'LSB_DEBUG_MBD', value: 'LC2_RC'}
+    - { property: 'LSB_DEBUG_EBROKERD', value: 'LC2_RC'}
+    - { property: 'LSF_RC_AUDIT_LOG', value: 'Y'}
+    - { property: 'LSF_STRIP_DOMAIN', value: '.{{ lsf_subnet_domain }}'}
+
+- name: Activate schmod_demand in lsb.modules
+  become: true
+  become_user: "{{ lsf_owner }}"
+  lineinfile:
+    dest: "{{ lsf_top }}/conf/lsbatch/{{ cluster_name }}/configdir/lsb.modules"
+    regexp: '^#schmod_demand'
+    line: "schmod_demand                  ()                              ()"
+
+- name: Add ocihost resource type to lsf.shared
+  become: true
+  become_user: "{{ lsf_owner }}"
+  lineinfile:
+    dest: "{{ lsf_top }}/conf/lsf.shared"
+    insertafter: '^RESOURCENAME  .+$'
+    line: "   ocihost     Boolean ()       ()          (instances from oci)"
+    state: present
+
+# - name: Restart mbatch daemon
+#   become: true
+#   become_user: "{{ lsf_owner }}"
+#   shell: 'source profile.lsf && badmin reconfig -f && badmin mbdrestart -f'
+#   args:
+#     executable: /bin/bash
+#     chdir: "{{ lsf_top }}/conf/"
+#   register: mbatch_daemon_restart_log
+
+# - name: Restart mbatch daemon output
+#   debug:
+#     msg: "{{ mbatch_daemon_restart_log }}"

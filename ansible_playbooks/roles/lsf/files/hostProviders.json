@@ -1,0 +1,9 @@
+{
+    "providers":[
+        {
+            "name": "oci",
+            "type": "awsProv",
+            "path": "resource_connector/oci/provider.json"
+        }
+    ]
+}

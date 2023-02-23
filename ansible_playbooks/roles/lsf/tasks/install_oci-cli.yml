@@ -1,0 +1,54 @@
+---
+- name: Python 3.8 installation
+  become: true
+  shell: "{{ item }}"
+  args:
+    executable: /bin/bash
+  with_items:
+    - "yum -y install python3.8"
+  register: python38_installation_output
+
+- name: Print Python 3.8 installation output
+  debug:
+    msg: "{{ python38_installation_output }}"
+
+- name: Update PATH for root
+  become: true
+  lineinfile:
+    dest: "/root/.bashrc"
+    state: present
+    line: "PATH=$PATH:/usr/local/bin"
+    insertafter: 'EOF'
+
+- name: export PATH for root
+  become: true
+  lineinfile:
+    dest: "/root/.bashrc"
+    state: present
+    line: "export PATH"
+    insertafter: 'PATH=$PATH:/usr/local/bin'
+
+- name: Install OCI CLI for root
+  become: true
+  shell: 'source ~/.bashrc && python3.8 -m pip install oci-cli'
+  args:
+    executable: /bin/bash
+
+- name: Provide access to Python installed libraries
+  become: true
+  shell: 'chmod -R 755  /usr/local/lib/python3.8/'
+  args:
+    executable: /bin/bash
+
+- name: Update instance principal auth for root
+  become: true
+  lineinfile:
+    dest: "/root/.bashrc"
+    state: present
+    line: 'export OCI_CLI_AUTH=instance_principal'
+
+- name: Update instance principal auth for opc
+  lineinfile:
+    dest: "/home/{{ lsf_owner }}/.bashrc"
+    state: present
+    line: 'export OCI_CLI_AUTH=instance_principal'

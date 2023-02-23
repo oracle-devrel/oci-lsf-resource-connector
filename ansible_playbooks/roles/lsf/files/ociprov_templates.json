@@ -1,0 +1,31 @@
+{
+    "templates": [
+        {
+            "templateId": "amd2",
+            "priority": 20,
+            "maxNumber": 8,
+            "availableNumber": 20,
+            "attributes": {
+                "type": ["String", "X86_64"],
+                "ncores": ["Numeric", "2"],
+                "ncpus": ["Numeric", "2"],
+                "mem": ["Numeric", "4000"]
+            },
+            "vmType": "amd2"
+        }
+,
+        {
+            "templateId": "amd4",
+            "priority": 10,
+            "maxNumber": 8,
+            "availableNumber": 20,
+            "attributes": {
+                "type": ["String", "X86_64"],
+                "ncores": ["Numeric", "4"],
+                "ncpus": ["Numeric", "4"],
+                "mem": ["Numeric", "8000"]
+            },
+            "vmType": "amd4"
+        }
+    ]
+}
