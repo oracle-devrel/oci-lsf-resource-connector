@@ -1,0 +1,21 @@
+---
+- name: Prerequisites
+  include_tasks: prerequisites.yml
+
+- name: Install OCI-CLI
+  include_tasks: install_oci-cli.yml
+
+- name: Install LSF
+  include_tasks: install_lsf.yml
+
+- name: Setup LSF resource connector
+  include_tasks: configure_resource_connector.yml
+
+- name: Start LSF
+  include_tasks: start_lsf.yml
+
+- name: Setup NFS
+  include_tasks: setup_nfs.yml
+
+- name: Setup Cloud-init
+  include_tasks: setup_cloud_init.yml

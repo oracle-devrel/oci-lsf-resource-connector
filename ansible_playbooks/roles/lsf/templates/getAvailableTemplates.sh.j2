@@ -1,0 +1,5 @@
+#!/bin/sh
+echo "{\"status\":\"complete\","
+cat {{ lsf_top }}/conf/resource_connector/oci/conf/ociprov_templates.json | egrep -v "^{" | egrep -v "^}"
+echo ","
+echo "\"message\":\"Get available templates success.\"}" 

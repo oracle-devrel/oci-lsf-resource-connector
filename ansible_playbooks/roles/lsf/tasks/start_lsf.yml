@@ -1,0 +1,14 @@
+---
+- name: Update root bashrc to source lsf profile file
+  become: true
+  lineinfile:
+    dest: "/root/.bashrc"
+    state: present
+    line: 'source {{ lsf_top }}/conf/profile.lsf'
+
+- name: Configure LSF to start at boot
+  become: true
+  shell: './hostsetup --top="{{ lsf_top }}" --boot="y" --start="y" --profile="y"'
+  args:
+    executable: /bin/bash
+    chdir: "{{ shared_drive }}/lsf10.1_lsfinstall"

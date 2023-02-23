@@ -1,0 +1,4 @@
+if [ "$USER" == "$${lsf_owner}" ]; then
+  source "$${lsf_top}/conf/profile.lsf"
+  export PATH="$PATH:/usr/local/bin"
+fi

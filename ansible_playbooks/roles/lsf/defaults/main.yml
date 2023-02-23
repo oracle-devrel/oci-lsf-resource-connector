@@ -1,0 +1,15 @@
+---
+nfs_packages:
+  - nfs-utils
+nfs_rpcbind_state: started
+nfs_rpcbind_enabled: true
+home_nfs_options: "rw,sync,no_root_squash"
+
+shared_drive: '/nfs/cluster'
+lsf_top: '/nfs/cluster/lsf'
+lsf_admins: 'opc'
+lsf_servers: ''
+cluster_name: 'lsfcluster'
+
+rc_queue: dynamic
+

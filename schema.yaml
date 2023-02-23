@@ -1,0 +1,219 @@
+title: OCI LSF deployment
+description: Sample LSF deployment with resource connector configured to automatically spin-up and terminate worker nodes in OCI.
+informationalText: Sample deployment of LSF 10.1 & LSF resource connector to OCI.
+schemaVersion: 1.1.0
+version: "20190304"
+
+# URL of Logo Icon used on Application Information tab. Logo must be 130x130 pixels.
+# (Optional)
+logoUrl: https://objectstorage.eu-frankfurt-1.oraclecloud.com/p/swecMrZM1hOe003yj-USshxxq20Aiuqvx0zv3pdY1UgHlLAEGXBxLpYO7vurwGpN/n/orasenatdpltintegration03/b/default-bucket/o/arch_center/lsf-logo.png
+
+
+locale: "en"
+variableGroups:
+  - title: "General configuration"
+    visible: false
+    variables:
+      - tenancy_ocid
+      - compartment_ocid
+      - region
+      - user_ocid
+      - fingerprint
+      - private_key_path
+      - freeform_tags
+      - defined_tags
+      - release
+  - title: "LSF Master host setup"
+    visible: true
+    variables:
+      - parent_compartment_ocid
+      - master_ad
+      - master_hostname
+      - master_shape
+      - master_ocpus
+      - master_memory_gbs
+      - master_bootv_size_gbs
+      - master_image
+      - ${vcnCompartment}
+      - lsf_vcn
+      - ${subnetCompartment}
+      - lsf_subnet
+      - ${ssh_public_key}
+      - assign_public_ip
+      - create_rc_policies
+  - title: "URLs for LSF Installation required files"
+    visible: true
+    variables:
+      - lsfinstaller
+      - lsfbin
+      - lsfpatch
+      - lsf_entitlement
+
+variables:
+  parent_compartment_ocid:
+    type: oci:identity:compartment:id
+    title: "Parent compartment for LSF master node."
+    required: true
+
+  master_ad:
+    type: oci:identity:availabilitydomain:name
+    title: "Availability domain for LSF master node."
+    dependsOn:
+      compartmentId: ${parent_compartment_ocid}
+    visible: complexExpression
+    required: true
+
+  master_hostname:
+    type: string
+    minLength: 5
+    maxLength: 15
+    pattern: ^[a-z][a-zA-Z0-9-]+$
+    title: "Hostname of LSF master node."
+    default: "lsf-master-1"
+    required: true
+
+  master_shape:
+    type: oci:core:instanceshape:name
+    title: Compute shape of LSF master node.
+    required: true
+    description: Tested with VM.Standard.E4.Flex shape.
+    pattern: ^.*?(Standard|Optimized).*?(3\.Flex|4\.Flex).*?$
+    dependsOn:
+      compartmentId: ${parent_compartment_ocid}
+
+  master_ocpus:
+    type: integer
+    title: Number of OCPUs for LSF master node.
+    required: true
+    description: 1 OCPUs = 2 Logical cores.
+    minimum: 1
+    default: 2
+
+  master_memory_gbs:
+    type: integer
+    title: RAM amount in GBs for LSF master node.
+    required: true
+    minimum: 8
+    default: 8
+  
+  master_bootv_size_gbs:
+    type: integer
+    title: Boot volume size in GBs for LSF master node.
+    required: true
+    minimum: 50
+    default: 50
+
+  master_image:
+    title: OS Image for LSF master node.
+    description: Deployment was tested only with Oracle Linux 8.6.
+    required: true
+    type: oci:core:image:id
+    dependsOn:
+      compartmentId: ${parent_compartment_ocid}
+      operatingSystem: "Oracle Linux"
+      operatingSystemVersion: "8"
+      shape: ${master_shape}
+
+  ssh_public_key:
+    title: SSH Public Key
+    type: oci:core:ssh:publickey
+    required: true
+
+  vcnCompartment:
+    title: Select VCN compartment.
+    type: oci:identity:compartment:id
+    required: true
+ 
+  lsf_vcn:
+    title: VCN to use with LSF cluster.
+    required: true
+    type: oci:core:vcn:id
+    dependsOn:
+      compartmentId: ${vcnCompartment}
+ 
+  subnetCompartment:
+    title: Select subnet compartment.
+    type: oci:identity:compartment:id
+    required: true
+ 
+  lsf_subnet:
+    title: Subnet to use with LSF cluster.
+    description: Make sure that all connections are allowed within subnet.
+    type: oci:core:subnet:id
+    required: true
+    dependsOn:
+      compartmentId: ${subnetCompartment}
+      vcnId: ${lsf_vcn}
+
+  assign_public_ip:
+    title: Assign public IP to LSF Master node?
+    type: boolean
+    required: true
+    default: false
+
+  create_rc_policies:
+    title: Create LSF Resource Connector required policies?
+    type: boolean
+    required: true
+    default: true
+
+  lsfinstaller:
+    type: string
+    title: "URL for LSF 10.1 installer file."
+    description: "Tested with lsf10.1_lsfinstall.tar.Z."
+    required: true
+
+  lsfbin:
+    type: string
+    title: "URL for LSF 10.1 binary files for x86-64."
+    description: "Tested with lsf10.1_lnx310-lib217-x86_64.tar.Z."
+    required: true
+
+  lsfpatch:
+    type: string
+    title: "URL for LSF 10.1 601088 patch file or later."
+    description: "Tested with lsf10.1_lnx310-lib217-x86_64-601088.tar.Z"
+    required: true
+
+  lsf_entitlement:
+    type: string
+    title: "URL for LSF installation file."
+    description: "Tested with lsf_entitlement.dat."
+    required: true
+
+outputGroups:
+- title: "LSF Master Node"
+  outputs:
+    - LSF_Master_hostname
+    - LSF_Master_private_ip
+    - LSF_Master_public_ip
+
+- title: "Access details"
+  outputs:
+    - private_key_bastion
+    - LSF_bastion_connection
+
+outputs:
+  private_key_bastion:
+    title: Generated Private Key for Bastion access
+    description: The private SSH key for the key-pair that you want to use for bastion access (session resource will be deleted automatically after 180 minutes.)
+    sensitive: true
+    type: copyableString
+  
+
+  LSF_Master_hostname:
+    type: string
+    title: LSF Master hostname
+
+  LSF_Master_private_ip:
+    type: string
+    title: LSF Master private IP
+  
+  LSF_Master_public_ip:
+    type: string
+    title: LSF Master public IP
+
+  LSF_bastion_connection:
+    type: copyableString
+    title: Bastion session to LSF Master node
+    description: The Bastion session terminates automatically in 3 hours after creation. For required private_key check private_key_bastion output.

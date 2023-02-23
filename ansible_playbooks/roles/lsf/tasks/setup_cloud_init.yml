@@ -1,0 +1,19 @@
+---
+- name: Get content of id_rsa.pub
+  # id_rsa.pub key is used to provide remote access from lsf_master to lsf dynamic hosts
+  # Availability of the dynamic host is confirmed based on successful ssh connection from lsf_master node.
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ shared_drive }}/misc/lsf_id_rsa.pub"
+  register: id_rsa_pub
+
+- name: Generate cloud-init script
+  # Generate cloud-init script which will be used for dynamic host initialization
+  become: true
+  template:
+    src: "cloud-init.j2"
+    dest: "{{ shared_drive }}/misc/cloud-init.sh"
+    mode: '0755'
+    owner: "{{ lsf_owner }}"
+    group: "{{ lsf_group }}"
+    force: true

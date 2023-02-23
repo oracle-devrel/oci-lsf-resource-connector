@@ -1,0 +1,42 @@
+---
+# - name: Open nfs ports
+#   become: true
+#   firewalld:
+#     service: nfs
+#     permanent: yes
+#     state: enabled
+#     zone: public
+
+# - name: Reload firewalld
+#   become: true
+#   command: 'firewall-cmd --reload'
+
+- name: Ensure NFS utilities are installed.
+  become: true
+  package: name=nfs-utils state=present
+
+- name: Start NFS server
+  become: true
+  service: 
+    name: nfs-server
+    state: started
+    enabled: true
+
+- name: Ensure rpcbind is running as configured.
+  become: true
+  service:
+    name: rpcbind
+    state: "{{ nfs_rpcbind_state }}"
+    enabled: "{{ nfs_rpcbind_enabled }}"
+
+- name: Create exports file
+  become: true
+  register: nfs_config
+  notify: reload_nfs
+  template:
+      src: exports.j2
+      dest: "/etc/exports.d/{{ cluster_name }}.exports"
+
+- name: Export folders
+  become: true
+  command: 'exportfs -ra'
